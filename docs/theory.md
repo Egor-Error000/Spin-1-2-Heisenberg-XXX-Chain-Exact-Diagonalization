@@ -14,9 +14,9 @@ $$
 В базисе $(|\downarrow\rangle,|\uparrow\rangle)$ локальные операторы равны
 
 $$
-S^z=\begin{pmatrix}-1/2&0\\0&1/2\end{pmatrix},\quad
-S^+=\begin{pmatrix}0&0\\1&0\end{pmatrix},\quad
-S^-=\begin{pmatrix}0&1\\0&0\end{pmatrix}.
+S^z=\left(\begin{smallmatrix}-\frac12&0\\0&\frac12\end{smallmatrix}\right),\quad
+S^+=\left(\begin{smallmatrix}0&0\\1&0\end{smallmatrix}\right),\quad
+S^-=\left(\begin{smallmatrix}0&1\\0&0\end{smallmatrix}\right).
 $$
 
 Подстановка $S^x=(S^++S^-)/2$, $S^y=(S^+-S^-)/(2i)$ даёт
