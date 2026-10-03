@@ -1,0 +1,6 @@
+.cache
+.ipynb_checkpoints
+__pycache__
+*.pyc
+results.csv
+energies.png

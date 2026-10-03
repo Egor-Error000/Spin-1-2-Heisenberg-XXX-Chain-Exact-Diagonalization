@@ -1,0 +1,18 @@
+name: xxx-chain-ed
+
+services:
+  notebook:
+    build: .
+    image: xxx-chain-ed:local
+    ports:
+      - "127.0.0.1:8888:8888"
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace
+      - OMP_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - NUMBA_NUM_THREADS=1
+    init: true
