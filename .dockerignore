@@ -4,3 +4,5 @@ __pycache__
 *.pyc
 results.csv
 energies.png
+.git
+data

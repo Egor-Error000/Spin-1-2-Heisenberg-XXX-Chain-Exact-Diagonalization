@@ -10,7 +10,7 @@ services:
       - .:/workspace
     working_dir: /workspace
     environment:
-      - PYTHONPATH=/workspace
+      - PYTHONPATH=/workspace/src:/workspace
       - OMP_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
       - MKL_NUM_THREADS=1
