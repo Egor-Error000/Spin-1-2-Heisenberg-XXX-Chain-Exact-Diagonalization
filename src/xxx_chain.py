@@ -91,8 +91,6 @@ def build_hamiltonian(
 ) -> tuple[sparse.csr_matrix, np.ndarray]:
     """Build H in a fixed-Sz sector; returns H and its ordered bit states."""
     if n_up is None:
-        if n % 2:
-            raise ValueError("Half filling requires even n")
         n_up = n // 2
     if chunk_size < 1:
         raise ValueError("chunk_size must be positive")
@@ -152,7 +150,7 @@ def lowest_eigenpair(
 def ground_state(
     n: int, periodic: bool, *, progress: bool = False, repeat: bool = False
 ) -> dict[str, float | int | str]:
-    """Compute the half-filled ground energy and numerical diagnostics."""
+    """Compute the central-sector ground energy and numerical diagnostics."""
     matrix, _ = build_hamiltonian(n, periodic, progress=progress)
     energy, vector, residual = lowest_eigenpair(
         matrix, progress=progress and n >= 20,
@@ -166,7 +164,11 @@ def ground_state(
     return {
         "N": n,
         "boundary": "PBC" if periodic else "OBC",
+        "n_up": n // 2,
+        "sz_total": (n // 2) - n / 2,
         "dimension": matrix.shape[0],
+        "nnz": matrix.nnz,
+        "csr_gib": (matrix.data.nbytes + matrix.indices.nbytes + matrix.indptr.nbytes) / 1024**3,
         "E0": energy,
         "e0": energy / n,
         "residual": residual,
@@ -176,11 +178,11 @@ def ground_state(
 
 
 def compute_grid(
-    sizes: tuple[int, ...] = (4, 6, 8, 10, 12, 14, 16),
+    sizes: tuple[int, ...] = tuple(range(3, 27)),
     *,
     workers: int = 1,
     progress: bool = True,
-    repeat_up_to: int = 16,
+    repeat_up_to: int = 26,
 ) -> list[dict[str, float | int | str]]:
     """Compute both boundaries; independent cases can use separate processes.
 

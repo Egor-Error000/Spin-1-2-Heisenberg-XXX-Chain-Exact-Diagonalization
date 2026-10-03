@@ -31,7 +31,7 @@ def pauli_reference(n: int, periodic: bool) -> np.ndarray:
 
 
 def check_dense_reference() -> None:
-    for n in tqdm((4, 6, 8), desc="Независимый эталон Паули"):
+    for n in tqdm(range(3, 9), desc="Независимый эталон Паули"):
         for periodic in (False, True):
             reference = pauli_reference(n, periodic)
             assert np.max(abs(reference.imag)) < 1e-13
@@ -63,12 +63,14 @@ def check_dense_reference() -> None:
             assert np.count_nonzero(abs(reference[:, all_up]) > 1e-13) == 1
             if n == 4 and periodic:
                 assert abs(sparse_energy + 2.0) < 1e-11
+            if n == 3:
+                assert abs(sparse_energy - (-0.75 if periodic else -1.0)) < 1e-11
 
 
 def check_working_sizes() -> None:
-    cases = [(n, pbc) for n in (4, 6, 8, 10, 12, 14, 16)
+    cases = [(n, pbc) for n in range(3, 17)
              for pbc in (False, True)]
-    for n, periodic in tqdm(cases, desc="Остатки и повторы eigsh"):
+    for n, periodic in tqdm(cases, desc="Все сектора, остатки и повторы eigsh"):
         matrix, _ = build_hamiltonian(n, periodic, progress=False)
         difference = matrix - matrix.T
         assert difference.nnz == 0 or np.max(abs(difference.data)) < 1e-13
@@ -79,12 +81,21 @@ def check_working_sizes() -> None:
         assert abs(np.linalg.norm(vector) - 1) < 1e-12
         assert abs(float(vector @ (matrix @ vector)) - first) < 1e-9
         assert first < 0
+        sector_minima = []
+        for n_up in range(n + 1):
+            sector, _ = build_hamiltonian(n, periodic, n_up=n_up)
+            energy, _, sector_residual = lowest_eigenpair(sector)
+            assert sector_residual < 1e-8
+            sector_minima.append(energy)
+        assert abs(first - min(sector_minima)) < 1e-9
+        if n % 2:
+            assert abs(sector_minima[n // 2] - sector_minima[n // 2 + 1]) < 1e-9
 
 
 def main() -> None:
     check_dense_reference()
     check_working_sizes()
-    print("Проверки пройдены: независимый эталон, все сектора N<=8 и N<=16.")
+    print("Проверки пройдены: независимый эталон N=3..8 и все сектора N=3..16.")
 
 
 if __name__ == "__main__":

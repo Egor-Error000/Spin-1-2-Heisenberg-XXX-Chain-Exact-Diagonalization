@@ -2,8 +2,8 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    NUMBA_CACHE_DIR=/workspace/.cache/numba \
-    MPLCONFIGDIR=/workspace/.cache/matplotlib
+    NUMBA_CACHE_DIR=/tmp/numba-cache \
+    MPLCONFIGDIR=/tmp/matplotlib-cache
 
 WORKDIR /workspace
 COPY requirements.txt /tmp/requirements.txt

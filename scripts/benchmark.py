@@ -1,4 +1,4 @@
-"""Measure whether process-level parallelism helps for the specified N<=16 grid."""
+"""Optional comparison of process-level parallelism inside one container."""
 
 from time import perf_counter
 
@@ -6,7 +6,7 @@ from xxx_chain import compute_grid
 
 
 def main() -> None:
-    sizes = (4, 6, 8, 10, 12, 14, 16)
+    sizes = tuple(range(3, 17))
     baseline = None
     measurements = []
     for workers in (1, 2, 4, 8, 14):
