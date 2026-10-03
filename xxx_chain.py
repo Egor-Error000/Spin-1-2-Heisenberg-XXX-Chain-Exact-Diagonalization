@@ -12,7 +12,7 @@ from multiprocessing import get_context
 import numpy as np
 from numba import njit
 from scipy import sparse
-from scipy.sparse.linalg import eigsh
+from scipy.sparse.linalg import LinearOperator, eigsh
 from tqdm.auto import tqdm
 
 
@@ -123,14 +123,26 @@ def build_hamiltonian(
 
 
 def lowest_eigenpair(
-    matrix: sparse.csr_matrix, *, seed: int = 2026, tolerance: float = 1e-11
+    matrix: sparse.csr_matrix, *, seed: int = 2026, tolerance: float = 1e-11,
+    progress: bool = False, label: str = "eigsh",
 ) -> tuple[float, np.ndarray, float]:
     """Return lowest eigenvalue, normalized vector, and absolute residual."""
     if matrix.shape[0] == 1:
         return float(matrix[0, 0]), np.ones(1), 0.0
     rng = np.random.default_rng(seed)
     initial = rng.standard_normal(matrix.shape[0])
-    values, vectors = eigsh(matrix, k=1, which="SA", v0=initial, tol=tolerance)
+    if progress:
+        with tqdm(desc=label, unit="matvec", mininterval=0.5, leave=False) as bar:
+            def matvec(vector: np.ndarray) -> np.ndarray:
+                bar.update(1)
+                return matrix @ vector
+
+            operator = LinearOperator(matrix.shape, matvec=matvec, dtype=np.float64)
+            values, vectors = eigsh(operator, k=1, which="SA", v0=initial,
+                                    tol=tolerance)
+    else:
+        values, vectors = eigsh(matrix, k=1, which="SA", v0=initial,
+                                tol=tolerance)
     energy = float(values[0])
     vector = vectors[:, 0]
     residual = float(np.linalg.norm(matrix @ vector - energy * vector))
@@ -142,7 +154,10 @@ def ground_state(
 ) -> dict[str, float | int | str]:
     """Compute the half-filled ground energy and numerical diagnostics."""
     matrix, _ = build_hamiltonian(n, periodic, progress=progress)
-    energy, vector, residual = lowest_eigenpair(matrix)
+    energy, vector, residual = lowest_eigenpair(
+        matrix, progress=progress and n >= 20,
+        label=f"eigsh N={n} {'PBC' if periodic else 'OBC'}",
+    )
     agreement = np.nan
     if repeat:
         second, _, second_residual = lowest_eigenpair(matrix, seed=271828)
@@ -165,6 +180,7 @@ def compute_grid(
     *,
     workers: int = 1,
     progress: bool = True,
+    repeat_up_to: int = 16,
 ) -> list[dict[str, float | int | str]]:
     """Compute both boundaries; independent cases can use separate processes.
 
@@ -176,12 +192,14 @@ def compute_grid(
     cases = [(n, periodic) for n in sizes for periodic in (False, True)]
     if workers == 1:
         iterator = tqdm(cases, desc="Цепочки", mininterval=0.5) if progress else cases
-        return [ground_state(n, periodic, progress=progress, repeat=True)
+        return [ground_state(n, periodic, progress=progress,
+                             repeat=n <= repeat_up_to)
                 for n, periodic in iterator]
     results: list[dict[str, float | int | str]] = []
     # Spawn works for a Jupyter kernel and for scripts on Windows and Linux.
     with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as pool:
-        futures = [pool.submit(ground_state, n, periodic, progress=False, repeat=True)
+        futures = [pool.submit(ground_state, n, periodic, progress=False,
+                               repeat=n <= repeat_up_to)
                    for n, periodic in cases]
         iterator = tqdm(as_completed(futures), total=len(futures),
                         desc=f"Цепочки ({workers} процесса)",
