@@ -1,6 +1,6 @@
 """Measure one XXX-chain solve in an isolated Docker container.
 
-Example: docker compose run --rm notebook python scripts/profile_resources.py 22 PBC
+Example: docker compose -f docker/compose.yaml run --rm notebook python scripts/profile_resources.py 22 PBC
 Linux's ru_maxrss reports the process peak in KiB. CPU time includes user and
 system time; CPU usage is CPU time / wall time, where 100% means one full core.
 """

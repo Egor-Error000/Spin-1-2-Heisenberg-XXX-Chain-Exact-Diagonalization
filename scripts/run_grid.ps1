@@ -34,7 +34,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Docker Engine is unavailable.' }
 $MemoryGiB = [double]($DockerBytes | Select-Object -Last 1) / 1GB
 $MemoryBudget = 0.70 * $MemoryGiB
 Write-Host ("Docker memory: {0:N2} GiB; job budget: {1:N2} GiB; CPU cap: 14." -f $MemoryGiB, $MemoryBudget)
-& docker compose build notebook
+& docker compose -f docker/compose.yaml build notebook
 if ($LASTEXITCODE -ne 0) { throw 'Docker build failed.' }
 
 function Run-Batch($Cases, [int]$Limit, [double]$Budget, [string]$Label) {
@@ -62,7 +62,7 @@ function Run-Batch($Cases, [int]$Limit, [double]$Budget, [string]$Label) {
             $Pending = @($Pending | Where-Object { $_.Id -ne $Chosen.Id })
             $Out = Join-Path $Logs ($Chosen.Id + '.out.log')
             $Err = Join-Path $Logs ($Chosen.Id + '.err.log')
-            $Args = @('compose', 'run', '--rm', '-T', 'notebook', 'python', 'scripts/run_case.py',
+            $Args = @('compose', '-f', 'docker/compose.yaml', 'run', '--rm', '-T', 'notebook', 'python', 'scripts/run_case.py',
                       [string]$Chosen.N, [string]$Chosen.Boundary)
             $Process = Start-Process -FilePath 'docker' -ArgumentList $Args -WorkingDirectory $ProjectRoot `
                 -RedirectStandardOutput $Out -RedirectStandardError $Err -WindowStyle Hidden -PassThru
@@ -91,7 +91,7 @@ function Run-Batch($Cases, [int]$Limit, [double]$Budget, [string]$Label) {
     Write-Progress -Activity $Label -Completed
     foreach ($Job in $Failed) {
         Write-Host "Retrying $($Job.Id) alone."
-        & docker compose run --rm -T notebook python scripts/run_case.py $Job.N $Job.Boundary
+        & docker compose -f docker/compose.yaml run --rm -T notebook python scripts/run_case.py $Job.N $Job.Boundary
         if ($LASTEXITCODE -ne 0) { throw "Case $($Job.Id) failed even when run alone." }
     }
     return ((Get-Date) - $StartedAt).TotalSeconds

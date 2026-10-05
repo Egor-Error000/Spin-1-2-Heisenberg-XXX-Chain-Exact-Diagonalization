@@ -46,6 +46,12 @@ $J_{\rm конспект}=-1$.
 то есть $S^z_{\rm total}=-1/2$. Сектор $+1/2$ имеет ту же энергию из-за
 одновременного переворота всех спинов.
 
+Вращательная симметрия даёт $[H,S^\pm_{\rm total}]=0$. Каждый мультиплет
+целого полного спина при чётном $N$ содержит проекцию $m=0$, а каждый
+полуцелый мультиплет при нечётном $N$ содержит $m=-1/2$ с той же энергией.
+Поэтому выбранный сектор обязательно содержит основную энергию, в том
+числе для нечётного кольца. Нулевая проекция не означает нулевой полный спин.
+
 Для каждой связи параллельных спинов диагональный вклад равен $+1/4$;
 антипараллельных — $-1/4$. Перестановка антипараллельных спинов даёт
 внедиагональный элемент $+1/2$. Numba формирует разреженную матрицу CSR
@@ -99,7 +105,7 @@ with (DATA / "results.csv").open("w", newline="", encoding="utf-8") as handle:
 print("Сохранено: data/results.csv")
 """),
     code("table", r"""
-lines = [r"| N | ГУ | $n_\\uparrow$ | Размер блока | $E_0$ | $E_0/N$ | Невязка | $|\\Delta E|$ повтора |",
+lines = [r"| N | ГУ | $n_\\uparrow$ | Размер блока | $E_0$ | $E_0/N$ | Невязка | $\\lvert\\Delta E\\rvert$ повтора |",
          "|---:|:---:|---:|---:|---:|---:|---:|---:|"]
 for row in results:
     lines.append(f"| {row['N']} | {row['boundary']} | {row['n_up']} | "
@@ -276,6 +282,128 @@ if usage:
     print(f"Docker: {docker_gib:.2f} ГиБ; N=26: пик {peak26:.2f} ГиБ (измерено); "
           f"N=28: около {estimate28:.1f} ГиБ (оценка, не измерение).")
     print("Подтверждённый максимум текущего кода — N=26; N=27 не тестировался и пока не поддерживается.")
+"""),
+]
+
+cells += [
+    markdown("dense-method", r"""
+## Сравнение с прямой плотной диагонализацией
+
+Прямой подход строит **полную** вещественную матрицу $2^N\times2^N$ в
+базисе всех конфигураций. Секторы не выделяются, разреженное хранение не
+используется. `scipy.linalg.eigh(driver="evd")` вычисляет **все** собственные
+значения и векторы; основная энергия выбирается после полного решения.
+Матричная эрмитовость используется стандартным плотным решателем, но
+спиновые симметрии не используются. Оба построения находятся в `src/xxx_chain.py`.
+
+`scripts/compare_dense.py` запускает каждый метод в отдельном дочернем процессе
+Linux, последовательно и с одним потоком BLAS. Перед замером прогреваются оба
+построителя Numba. Время включает сборку и один вызов решателя (в sparse-вызов
+входит внутренняя проверка невязки); дополнительная диагностика вынесена
+отдельно. Пик RSS включает импорты, прогрев и диагностику.
+Энергии, невязки и нормы проверяются для каждой завершённой пары.
+Это отдельные сопоставимые замеры: старое время диспетчера включает два `eigsh`.
+
+Плотная матрица занимает $8\,4^N$ байт. Предварительный бюджет оценивается
+консервативно как пять таких матриц плюс 0,5 ГиБ для процесса и сравнивается
+с 70% **доступной** памяти с учётом cgroup. Оценка не является измеренным RSS.
+На каждый процесс по умолчанию отводится 180 с, включая запуск и прогрев.
+После превышения лимита более крупные случаи этой границы пропускаются.
+Пропуск по памяти и остановка по времени явно различаются; они не доказывают
+абсолютный предел оборудования. Оба вида границ рассчитываются независимо.
+
+Для полного замера запустите:
+`docker compose -f docker/compose.yaml run --rm -T notebook python scripts/compare_dense.py --case-timeout 900`.
+Лимит времени можно увеличить через `--case-timeout 900`.
+Без сохранённого актуального замера notebook выполняет небольшое сравнение
+до $N=8$; тяжёлый benchmark запускается отдельной командой.
+"""),
+    code("dense-comparison", r"""
+sys.path.insert(0, str(ROOT))
+from scripts.compare_dense import load_comparison, run_comparison
+
+comparison = load_comparison(DATA)
+if comparison is None:
+    comparison = run_comparison(max_n=8, directory=DATA)
+expected_dense_cases = {(n, boundary)
+                        for n in range(3, comparison["settings"]["max_n"] + 1)
+                        for boundary in ("OBC", "PBC")}
+actual_dense_cases = {(row["N"], row["boundary"])
+                      for row in comparison["rows"] if row["method"] == "dense"}
+assert actual_dense_cases == expected_dense_cases, "Benchmark не завершён; повторите scripts/compare_dense.py"
+pairs = comparison["pairs"]
+assert pairs, "Нет завершённых пар сравнения"
+assert max(row["energy_delta"] for row in pairs) < 1e-8
+print(f"Сопоставимых пар: {len(pairs)}; максимальное |ΔE₀|: "
+      f"{max(row['energy_delta'] for row in pairs):.3e}")
+print("Настройки замера:", comparison["settings"])
+lines = ["| N | ГУ | Полный размер | Сектор | Плотный, с | CSR/eigsh, с | Отношение времени | RSS плотный, ГиБ | RSS CSR, ГиБ | ΔE₀ |",
+         "|---:|:---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+for row in pairs:
+    lines.append(f"| {row['N']} | {row['boundary']} | {row['dense_dimension']:,} | "
+                 f"{row['sparse_dimension']:,} | {row['dense_seconds']:.4f} | "
+                 f"{row['sparse_seconds']:.4f} | {row['time_ratio_dense_over_sparse']:.2f} | "
+                 f"{row['dense_peak_gib']:.3f} | {row['sparse_peak_gib']:.3f} | "
+                 f"{row['energy_delta']:.2e} |")
+display(Markdown("\n".join(lines)))
+for boundary in ("OBC", "PBC"):
+    branch = [row for row in pairs if row["boundary"] == boundary]
+    if branch:
+        last = max(branch, key=lambda row: row["N"])
+        print(f"{boundary}: полный спектр подтверждён до N={last['N']}; "
+              f"последний замер {last['dense_seconds']:.2f} с, "
+              f"RSS {last['dense_peak_gib']:.2f} ГиБ.")
+stops = [row for row in comparison["rows"] if row["status"] != "ok"]
+if stops:
+    lines = ["| N | ГУ | Метод | Статус | Причина | Прогноз пика, ГиБ |",
+             "|---:|:---:|:---:|:---:|:---|---:|"]
+    for row in stops:
+        forecast = row.get("estimated_peak_gib")
+        forecast_text = "—" if forecast is None else f"{forecast:.2f}"
+        lines.append(f"| {row['N']} | {row['boundary']} | {row['method']} | "
+                     f"{row['status']} | {row['reason']} | {forecast_text} |")
+    display(Markdown("\n".join(lines)))
+else:
+    print("Достигнут заданный --max-n; предел ресурсов этим запуском не установлен.")
+"""),
+    code("dense-comparison-plots", r"""
+fig, axes = plt.subplots(1, 3, figsize=(16, 4.8), constrained_layout=True)
+for boundary in ("OBC", "PBC"):
+    branch = [row for row in pairs if row["boundary"] == boundary]
+    for method, style in (("dense", "-"), ("sparse", "--")):
+        label = f"{boundary}: {'полный плотный спектр' if method == 'dense' else 'сектор + CSR + eigsh'}"
+        axes[0].semilogy([row["N"] for row in branch],
+                         [row[f"{method}_seconds"] for row in branch],
+                         marker="o", linestyle=style, color=colors[boundary], label=label)
+        axes[1].semilogy([row["N"] for row in branch],
+                         [row[f"{method}_peak_gib"] for row in branch],
+                         marker="o", linestyle=style, color=colors[boundary], label=label)
+n = np.arange(3, 27)
+axes[2].semilogy(n, 8.0 * 4.0**n / 1024**3, label="Полная плотная H (формула)")
+axes[2].semilogy(n, [8.0 * comb(int(k), int(k)//2)**2 / 1024**3 for k in n],
+                 label="Плотный центральный блок (формула)")
+axes[2].semilogy([row["N"] for row in results if row["boundary"] == "PBC"],
+                 [row["csr_gib"] for row in results if row["boundary"] == "PBC"],
+                 marker="o", label="CSR центрального блока, ПГУ (измерено)")
+axes[0].set_ylabel("Сборка + один решатель, с")
+axes[1].set_ylabel("Пиковый RSS процесса, ГиБ")
+axes[2].set_ylabel("Хранение только матрицы, ГиБ")
+axes[0].set_title("Измеренное время")
+axes[1].set_title("Измеренная память")
+axes[2].set_title("Матрица: формулы и измерение CSR")
+for ax in axes:
+    ax.set_xlabel("Число спинов N")
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=7)
+fig.savefig(DATA / "dense_comparison.png", dpi=180)
+plt.show()
+display(Markdown("Увеличение доступного N достигается совместно выбором сектора, "
+                 "разреженным хранением и поиском одного уровня. Центральный сектор "
+                 "сам по себе всё ещё потребовал бы огромную плотную матрицу. "
+                 "На малых N накладные расходы итерационного метода могут превышать "
+                 "стоимость плотного решения, а RSS в основном определяется импортами "
+                 "и прогревом. Эти два маршрута измеряют суммарный "
+                 "выигрыш и не выделяют отдельный вклад каждой оптимизации."))
 """),
 ]
 

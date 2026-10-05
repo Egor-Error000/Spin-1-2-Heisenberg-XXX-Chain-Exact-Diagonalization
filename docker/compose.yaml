@@ -2,12 +2,14 @@ name: xxx-chain-ed
 
 services:
   notebook:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     image: xxx-chain-ed:local
     ports:
       - "127.0.0.1:8888:8888"
     volumes:
-      - .:/workspace
+      - ..:/workspace
     working_dir: /workspace
     environment:
       - PYTHONPATH=/workspace/src:/workspace

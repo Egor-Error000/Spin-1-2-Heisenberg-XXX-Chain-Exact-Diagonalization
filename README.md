@@ -1,31 +1,9 @@
-# XXX--: точная диагонализация спиновой цепочки
+# XXX--: exact diagonalization of the spin chain
 
-Антиферромагнитная XXX-цепочка спина $1/2$ с $J=1$: энергия основного состояния для **каждого целого $N=3,\ldots,26$** при открытых и периодических границах. Итоговый [Jupyter Notebook](notebooks/XXX_chain_ED.ipynb) содержит формулы, выполненные расчёты, таблицу и графики. [Теоретическое обоснование](docs/theory.md) выводит гамильтониан и объясняет выбор сектора, метод и проверки.
+This project computes the ground-state energy of the antiferromagnetic spin-1/2 XXX chain with J=1 for every N=3,...,26, with open and periodic boundary conditions. The executed [Jupyter notebook](notebooks/XXX_chain_ED.ipynb) contains the derivation, results, tables, and plots. The derivation is documented in [docs/theory.md](docs/theory.md).
 
-Численный модуль находится в `src/xxx_chain.py`, независимый эталон — в `tests/validate.py`. Локальные результаты и графики пишутся в `data/`, которая не отслеживается Git. Выполненный notebook хранится в Git и виден сразу после открытия.
+The numerical source is [src/xxx_chain.py](src/xxx_chain.py); the independent validation reference is [tests/validate.py](tests/validate.py). Local generated CSV files and plots are written under `data/`, which Git ignores. The executed notebook is tracked in `notebooks/`.
 
-## Запуск на Windows 11
+See [docker/README.md](docker/README.md) for building the image, starting Jupyter, running tests, and reproducing calculations. The latest measured comparison between direct dense diagonalization and the optimized sector method is in [reports/last-run-dense-comparison.md](reports/last-run-dense-comparison.md).
 
-Запустите Docker Desktop и из корня проекта выполните:
-
-```powershell
-docker compose run --rm -T notebook python -m unittest discover -s tests -v
-pwsh -NoProfile -File scripts/run_grid.ps1
-docker compose run --rm -T notebook python scripts/check_partners.py
-docker compose run --rm -T notebook jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=3600 notebooks/XXX_chain_ED.ipynb
-docker compose up -d notebook
-```
-
-Если используется Windows PowerShell вместо `pwsh`, замените вторую строку на `powershell -ExecutionPolicy Bypass -File scripts/run_grid.ps1`. Jupyter доступен только по `127.0.0.1:8888`; адрес с токеном показывает `docker compose logs notebook`.
-
-`run_grid.ps1` запускает независимые случаи в отдельных контейнерах и измеряет каждый процесс. Он сравнивает верхние пределы 1, 2, 4, 8 и 14 контейнеров на 12 задачах $N=17,\ldots,22$, выбирает самый быстрый режим и ограничивает сумму прогнозируемых пиков 70% памяти Docker с дополнительным резервом 0,5 ГиБ на контейнер. Если случай завершился ошибкой, диспетчер повторяет его отдельно и останавливается при повторной ошибке. Используйте `-MaxParallel 4`, чтобы явно задать предел и пропустить сравнение режимов.
-
-Notebook проверяет версию и численные диагностики каждого контейнерного результата. Если отдельных результатов нет, **Run All** вычисляет недостающие случаи последовательно через тот же модуль. Для сопоставимых измерений памяти и CPU нужен запуск диспетчера. Файлы `data/results.csv`, `data/energies.png`, `data/resource_measurements.csv` и `data/resource_usage.png` создаются локально.
-
-## Проверка и ресурсы
-
-Независимая реализация через произведения Кронекера сравнивает элементы матрицы и спектр при $N=3,\ldots,8$. Для $N\leq16$ проверяются минимумы всех секторов намагниченности. Каждый из 48 расчётов проверяет норму, невязку и повтор `eigsh` с другим стартовым вектором; дополнительно проверяются точные $E_0(3,\mathrm{ОГУ})=-1$, $E_0(3,\mathrm{ПГУ})=-3/4$ и $E_0(4,\mathrm{ПГУ})=-2$.
-
-В предыдущем замере расчёт $N=26$ достиг 6,80 ГиБ при доступных Docker 15,34 ГиБ. Это измерение одного запуска `eigsh`; новые измерения диспетчера включают два запуска. Оценка для $N=28$ превышает доступную память и не является выполненным расчётом. Число рабочих контейнеров ограничивается памятью и фактическим ускорением, а не только 16 логическими CPU.
-
-[Репозиторий GitHub](https://github.com/Egor-Error000/XXX--) · [Правила для агента](AGENTS.md)
+[GitHub repository](https://github.com/Egor-Error000/XXX--) · [Agent instructions](AGENTS.md)

@@ -1,6 +1,6 @@
 """Independent dense reference checks and numerical diagnostics.
 
-Run with: docker compose run --rm notebook python -m unittest discover -s tests -v
+Run with: docker compose -f docker/compose.yaml run --rm notebook python -m unittest discover -s tests -v
 """
 
 from __future__ import annotations

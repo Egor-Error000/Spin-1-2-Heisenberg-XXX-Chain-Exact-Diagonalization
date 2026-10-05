@@ -12,6 +12,7 @@ from multiprocessing import get_context
 import numpy as np
 from numba import njit
 from scipy import sparse
+from scipy.linalg import eigh
 from scipy.sparse.linalg import LinearOperator, eigsh
 from tqdm.auto import tqdm
 
@@ -209,3 +210,48 @@ def compute_grid(
         for future in iterator:
             results.append(future.result())
     return sorted(results, key=lambda row: (int(row["N"]), str(row["boundary"])))
+
+
+@njit(cache=True)
+def _fill_dense(matrix: np.ndarray, n: int, periodic: bool) -> None:
+    """Same local exchange as the CSR builder, on the entire bit basis."""
+    bonds = n if periodic else n - 1
+    for state in range(1 << n):
+        diagonal = 0.0
+        for i in range(bonds):
+            j = (i + 1) % n
+            if ((state >> i) & 1) == ((state >> j) & 1):
+                diagonal += 0.25
+            else:
+                diagonal -= 0.25
+                flipped = state ^ (1 << i) ^ (1 << j)
+                matrix[flipped, state] += 0.5
+        matrix[state, state] += diagonal
+
+
+def build_dense_hamiltonian(
+    n: int, periodic: bool, *, max_matrix_bytes: int = 2 * 1024**3,
+) -> np.ndarray:
+    """Full float64 matrix, without sector projection or sparse intermediates.
+
+    The allocation limit covers only H. A benchmark must separately reserve
+    LAPACK copies, all eigenvectors and workspace before calling this function.
+    """
+    if not 3 <= n <= 26:
+        raise ValueError("Require 3 <= n <= 26")
+    dimension = 1 << n
+    matrix_bytes = 8 * dimension**2
+    if matrix_bytes > max_matrix_bytes:
+        raise MemoryError(f"Dense H requires {matrix_bytes} bytes; limit is {max_matrix_bytes}")
+    matrix = np.zeros((dimension, dimension), dtype=np.float64, order="F")
+    _fill_dense(matrix, n, periodic)
+    return matrix
+
+
+def full_dense_eigensystem(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Compute ALL eigenvalues and eigenvectors with LAPACK divide-and-conquer.
+
+    No spectral subset, Krylov method, or decomposition into spin sectors.
+    Keep H intact so that the returned ground-state residual can be checked.
+    """
+    return eigh(matrix, driver="evd", overwrite_a=False, check_finite=False)
