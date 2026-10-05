@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from datetime import datetime
 from time import perf_counter, process_time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -134,6 +135,7 @@ def load_comparison(directory: Path) -> dict | None:
 
 def write_results(directory: Path, payload: dict) -> None:
     directory.mkdir(parents=True, exist_ok=True)
+    payload.setdefault("generated_at", datetime.now().astimezone().isoformat(timespec="seconds"))
     temporary = directory / "dense_comparison.json.tmp"
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
                          encoding="utf-8")
@@ -146,6 +148,55 @@ def write_results(directory: Path, payload: dict) -> None:
                 writer = csv.DictWriter(handle, fieldnames=fields)
                 writer.writeheader()
                 writer.writerows(rows)
+    (directory / "dense_comparison.md").write_text(
+        render_report(payload), encoding="utf-8")
+
+
+def render_report(payload: dict) -> str:
+    """Build the human-readable Russian report from the machine-readable results."""
+    pairs = payload.get("pairs", [])
+    rows = payload.get("rows", [])
+    generated = payload.get("generated_at", "не указано")
+    lines = [
+        "# Сравнение плотного и разрежённого расчётов", "",
+        f"Отчёт автоматически сформирован: {generated}.", "",
+        "Сравниваются полная матрица размерности $2^N$ с расчётом всего "
+        "спектра и разрежённая матрица центрального сектора с поиском "
+        "минимального собственного значения. Время включает построение "
+        "матрицы и решение; пиковая память измерена по RSS отдельного процесса.", "",
+        "| N | ГУ | E₀ | Время плотного, с | Время разрежённого, с | "
+        "Ускорение | RSS плотный, ГиБ | RSS разрежённый, ГиБ | |ΔE₀| |",
+        "|---:|:---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in pairs:
+        lines.append(
+            f"| {row['N']} | {row['boundary']} | {row['dense_E0']:.12g} | "
+            f"{row['dense_seconds']:.4g} | {row['sparse_seconds']:.4g} | "
+            f"{row['time_ratio_dense_over_sparse']:.4g} | "
+            f"{row['dense_peak_gib']:.3f} | {row['sparse_peak_gib']:.3f} | "
+            f"{row['energy_delta']:.2e} |"
+        )
+    if not pairs:
+        lines += ["| — | — | — | — | — | — | — | — | — |"]
+    lines += ["", "## Статус замеров", ""]
+    status_names = {"ok": "завершён", "skipped": "пропущен", "timeout": "тайм-аут", "error": "ошибка"}
+    for status in ("ok", "skipped", "timeout", "error"):
+        count = sum(row.get("status") == status for row in rows)
+        if count:
+            lines.append(f"- {status_names[status]}: {count}")
+    settings = payload.get("settings", {})
+    if settings:
+        lines += ["", f"Максимальный размер в задании: N={settings.get('max_n', '—')}; "
+                  f"лимит времени одного случая: {settings.get('case_timeout', '—')} с; "
+                  f"доля доступной памяти для оценки: {settings.get('memory_fraction', '—')}.", ""]
+    else:
+        lines.append("")
+    lines += ["Машиночитаемые данные: `dense_comparison.json`, "
+              "`dense_comparison.csv`, `dense_comparison_pairs.csv`; "
+              "все локальные результаты хранятся в `data/` и не включаются в Git.", "",
+              "Повторный запуск обновляет этот отчёт автоматически. Команда приведена "
+              "в [инструкции Docker](../docker/README.md).", ""]
+    return "\n".join(lines)
 
 
 def run_comparison(max_n: int = 26, case_timeout: float = 180,
@@ -240,12 +291,22 @@ def main() -> None:
     parser.add_argument("--max-n", type=int, default=26)
     parser.add_argument("--case-timeout", type=float, default=180)
     parser.add_argument("--memory-fraction", type=float, default=0.70)
+    parser.add_argument("--report-only", action="store_true",
+                        help="regenerate the Markdown report from data/dense_comparison.json")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--n", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--boundary", choices=("OBC", "PBC"), help=argparse.SUPPRESS)
     parser.add_argument("--method", choices=("dense", "sparse"), help=argparse.SUPPRESS)
     args = parser.parse_args()
-    if args.worker:
+    if args.report_only:
+        source = ROOT / "data" / "dense_comparison.json"
+        if not source.exists():
+            parser.error("data/dense_comparison.json не найден; сначала выполните замер")
+        payload = json.loads(source.read_text(encoding="utf-8"))
+        payload.setdefault("generated_at", datetime.now().astimezone().isoformat(timespec="seconds"))
+        write_results(ROOT / "data", payload)
+        print(f"Отчёт обновлён: {ROOT / 'data' / 'dense_comparison.md'}")
+    elif args.worker:
         print(json.dumps(worker(args.n, args.boundary, args.method), allow_nan=False))
     else:
         run_comparison(args.max_n, args.case_timeout, args.memory_fraction)

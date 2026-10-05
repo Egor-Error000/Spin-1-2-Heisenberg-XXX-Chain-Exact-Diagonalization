@@ -1,10 +1,10 @@
-# Docker: build and run
+# Docker: сборка и запуск
 
-Run commands from the repository root in PowerShell. Install and start Docker Desktop first. All Docker-related configuration is grouped in this directory: `Dockerfile`, `compose.yaml`, and `Dockerfile.dockerignore`.
+Все команды выполняйте из корня репозитория в PowerShell. Сначала установите и запустите Docker Desktop. Конфигурация Docker собрана в этой папке: `Dockerfile`, `compose.yaml` и `Dockerfile.dockerignore`.
 
-The Compose file is invoked with `-f docker/compose.yaml`; its build context and workspace mount intentionally point to the repository root, so project source, tests, notebooks, and local `data/` are available inside `/workspace`.
+Compose запускается с параметром `-f docker/compose.yaml`. Контекст сборки и подключаемая папка проекта указывают на корень репозитория, поэтому исходники, тесты, ноутбуки и локальная папка `data/` доступны в `/workspace`.
 
-## Build and start Jupyter
+## Сборка и запуск Jupyter
 
 ```powershell
 docker compose -f docker/compose.yaml build notebook
@@ -12,51 +12,57 @@ docker compose -f docker/compose.yaml up -d notebook
 docker compose -f docker/compose.yaml logs -f notebook
 ```
 
-Open `http://127.0.0.1:8888` in a browser. Jupyter prints the access token in its logs. The port is bound to loopback only. Stop the service with:
+Откройте `http://127.0.0.1:8888` в браузере. Токен доступа Jupyter выводится в журнал. Порт доступен только с локального компьютера. Чтобы остановить сервис:
 
 ```powershell
 docker compose -f docker/compose.yaml down
 ```
 
-## Tests and calculations
+## Тесты и расчёты
 
-Run the independent tests and odd/even sector cross-checks:
+Запустите независимые проверки и сверку нечётных/чётных секторов:
 
 ```powershell
 docker compose -f docker/compose.yaml run --rm -T notebook python -m unittest discover -s tests -v
 docker compose -f docker/compose.yaml run --rm -T notebook python scripts/check_partners.py
 ```
 
-Compute the complete OBC/PBC grid for N=3,...,26 (PowerShell 7):
+Вычислите полную сетку ОГУ/ПГУ для $N=3,\ldots,26$ (PowerShell 7):
 
 ```powershell
 pwsh -NoProfile -File scripts/run_grid.ps1
 ```
 
-Windows PowerShell alternative:
+Для Windows PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/run_grid.ps1
 ```
 
-The dispatcher builds the image, benchmarks worker caps unless `-MaxParallel` is specified, then schedules isolated per-case containers. It budgets 70% of Docker Engine memory and reserves 0.5 GiB per worker. Memory and concurrency are detected/chosen at runtime. For example, use `-MaxParallel 4` to set a fixed worker cap and skip the benchmark. Docker's memory total can be inspected with `docker info --format '{{.MemTotal}}'`; host-available RAM and Docker Engine memory are distinct figures.
+Диспетчер собирает Docker-образ, подбирает предел параллельности по замерам (если не задан `-MaxParallel`) и запускает отдельный контейнер для каждого случая. Он планирует вычисления в пределах 70% памяти Docker и резервирует 0,5 ГиБ на рабочий контейнер. Например, `-MaxParallel 4` задаёт предел в четыре контейнера и пропускает предварительный подбор. Объём памяти Docker Engine можно узнать командой `docker info --format '{{.MemTotal}}'`; он отличается от объёма свободной памяти компьютера.
 
-Run the dense-vs-sector timing experiment:
+Сравните замеры полной плотной диагонализации и разрежённого метода:
 
 ```powershell
 docker compose -f docker/compose.yaml run --rm -T notebook python scripts/compare_dense.py --case-timeout 900
 ```
 
-Execute all notebook cells in place:
+Команда сохраняет таблицы и график в `data/`, а также автоматически создаёт `data/dense_comparison.md`. Чтобы перестроить Markdown-отчёт по уже сохранённому JSON без повторного замера:
+
+```powershell
+docker compose -f docker/compose.yaml run --rm -T notebook python scripts/compare_dense.py --report-only
+```
+
+Выполните все ячейки ноутбука и сохраните результаты в нём:
 
 ```powershell
 docker compose -f docker/compose.yaml run --rm -T notebook jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=3600 notebooks/XXX_chain_ED.ipynb
 ```
 
-For a single-case resource profile:
+Для измерения ресурсов одного случая:
 
 ```powershell
 docker compose -f docker/compose.yaml run --rm -T notebook python scripts/profile_resources.py 22 PBC
 ```
 
-Generated measurements and plots are stored in `data/`, which is excluded from Git. Jupyter itself can be started in the background with `up -d`; use the `logs -f` command above to retrieve its URL and token.
+Результаты замеров и графики сохраняются в `data/`, эта папка исключена из Git. Jupyter можно оставить в фоне командой `up -d`; адрес и токен будут доступны в журнале контейнера.

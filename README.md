@@ -1,9 +1,9 @@
-# XXX--: exact diagonalization of the spin chain
+# XXX--: точная диагонализация спиновой цепочки
 
-This project computes the ground-state energy of the antiferromagnetic spin-1/2 XXX chain with J=1 for every N=3,...,26, with open and periodic boundary conditions. The executed [Jupyter notebook](notebooks/XXX_chain_ED.ipynb) contains the derivation, results, tables, and plots. The derivation is documented in [docs/theory.md](docs/theory.md).
+Проект вычисляет энергию основного состояния антиферромагнитной XXX-цепочки со спином 1/2 и $J=1$ для $N=3,\ldots,26$ при открытых и периодических граничных условиях. Выполненный [Jupyter-ноутбук](notebooks/XXX_chain_ED.ipynb) содержит вывод, результаты, таблицы и графики. Теория изложена в [docs/theory.md](docs/theory.md).
 
-The numerical source is [src/xxx_chain.py](src/xxx_chain.py); the independent validation reference is [tests/validate.py](tests/validate.py). Local generated CSV files and plots are written under `data/`, which Git ignores. The executed notebook is tracked in `notebooks/`.
+Основной расчёт находится в [src/xxx_chain.py](src/xxx_chain.py), независимая проверка — в [tests/validate.py](tests/validate.py). Скрипты сохраняют локальные CSV, JSON и графики в `data/`; Git игнорирует эту папку. Выполненный ноутбук хранится в `notebooks/`.
 
-See [docker/README.md](docker/README.md) for building the image, starting Jupyter, running tests, and reproducing calculations. The latest measured comparison between direct dense diagonalization and the optimized sector method is in [reports/last-run-dense-comparison.md](reports/last-run-dense-comparison.md).
+Инструкции по Docker, тестам и воспроизведению расчётов находятся в [docker/README.md](docker/README.md). Сравнение плотного и разрежённого методов автоматически создаётся в `data/dense_comparison.md` при запуске `scripts/compare_dense.py`; его можно обновить отдельно командой `--report-only` после замера.
 
-[GitHub repository](https://github.com/Egor-Error000/XXX--) · [Agent instructions](AGENTS.md)
+[Репозиторий на GitHub](https://github.com/Egor-Error000/XXX--) · [Инструкции для агентов](AGENTS.md)
