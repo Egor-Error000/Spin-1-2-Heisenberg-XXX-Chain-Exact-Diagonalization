@@ -18,16 +18,21 @@ $|\downarrow\rangle$ с $S^z=-1/2$ и $|\uparrow\rangle$ с $S^z=+1/2$.
 При порядке базиса $(|\downarrow\rangle,|\uparrow\rangle)$ векторы равны
 
 $$
-|\downarrow\rangle=\begin{pmatrix}1\\ 0\end{pmatrix},\qquad
-|\uparrow\rangle=\begin{pmatrix}0\\ 1\end{pmatrix}.
+|\downarrow\rangle=\begin{pmatrix}1\\
+0\end{pmatrix},\qquad
+|\uparrow\rangle=\begin{pmatrix}0\\
+1\end{pmatrix}.
 $$
 
 В этом базисе локальные операторы равны
 
 $$
-S^z=\left(\begin{smallmatrix}-\frac12&0\\ 0&\frac12\end{smallmatrix}\right),\quad
-S^+=\left(\begin{smallmatrix}0&0\\ 1&0\end{smallmatrix}\right),\quad
-S^-=\left(\begin{smallmatrix}0&1\\ 0&0\end{smallmatrix}\right).
+S^z=\left(\begin{smallmatrix}-\frac12&0\\
+0&\frac12\end{smallmatrix}\right),\quad
+S^+=\left(\begin{smallmatrix}0&0\\
+1&0\end{smallmatrix}\right),\quad
+S^-=\left(\begin{smallmatrix}0&1\\
+0&0\end{smallmatrix}\right).
 $$
 
 Подстановка $S^x=(S^++S^-)/2$, $S^y=(S^+-S^-)/(2i)$ даёт
@@ -331,7 +336,8 @@ $m=-S,-S+1,\ldots,S$. Условие $m=0$ не означает $S=0$.
 Для такого антиферромагнетика теорема даёт
 
 $$
-S_0=|S_A-S_B|=\begin{cases}0,&N\text{ чётно},\\ 1/2,&N\text{ нечётно и границы открыты}.
+S_0=|S_A-S_B|=\begin{cases}0,&N\text{ чётно},\\
+1/2,&N\text{ нечётно и границы открыты}.
 \end{cases}
 $$
 
