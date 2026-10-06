@@ -133,7 +133,8 @@ $H|b\rangle=\sum_aH_{ab}|a\rangle$: столбец $b$ описывает дей
 
 ### Почему продольная часть диагональна
 
-Число $s\in[0,2^N-1]$ кодирует состояние $|s\rangle$; бит $b_i(s)=(s\gg i)\mathbin{\&}1$ равен 1 для спина вверх. Тогда
+Число $s\in[0,2^N-1]$ кодирует состояние $|s\rangle$; бит
+$b_i(s)$ вычисляется как `(s >> i) & 1` и равен 1 для спина вверх. Тогда
 
 $$
 S_i^z|s\rangle=(b_i-\tfrac12)|s\rangle.
@@ -424,7 +425,7 @@ $$
 подпространства Крылова
 
 $$
-\mathcal K_m(H,q_1)=\operatorname{span}\{q_1,Hq_1,\ldots,H^{m-1}q_1\},
+\mathcal K_m(H,q_1)=\mathrm{span}\{q_1,Hq_1,\ldots,H^{m-1}q_1\},
 \qquad Q_m=(q_1,\ldots,q_m).
 $$
 
