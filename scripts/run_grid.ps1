@@ -97,6 +97,7 @@ function Run-Batch($Cases, [int]$Limit, [double]$Budget, [string]$Label) {
     return ((Get-Date) - $StartedAt).TotalSeconds
 }
 
+# N=27 and N=28 stay outside this pool: each needs its own 16 GiB container.
 $AllCases = @(foreach ($N in 3..26) {
     foreach ($Boundary in @('OBC', 'PBC')) {
         [pscustomobject]@{ N = $N; Boundary = $Boundary; Id = ('N{0:D2}_{1}' -f $N, $Boundary) }

@@ -27,7 +27,7 @@ docker compose -f docker/compose.yaml run --rm -T notebook python -m unittest di
 docker compose -f docker/compose.yaml run --rm -T notebook python scripts/check_partners.py
 ```
 
-Вычислите полную сетку ОГУ/ПГУ для $N=3,\ldots,26$ (PowerShell 7):
+Вычислите полную сетку ОГУ/ПГУ для $N=3,\ldots,26$ (PowerShell 7). Случаи $N=27,28$ в этот параллельный диспетчер не входят:
 
 ```powershell
 pwsh -NoProfile -File scripts/run_grid.ps1
@@ -40,6 +40,18 @@ powershell -ExecutionPolicy Bypass -File scripts/run_grid.ps1
 ```
 
 Диспетчер собирает Docker-образ, подбирает предел параллельности по замерам (если не задан `-MaxParallel`) и запускает отдельный контейнер для каждого случая. Он планирует вычисления в пределах 70% памяти Docker и резервирует 0,5 ГиБ на рабочий контейнер. Например, `-MaxParallel 4` задаёт предел в четыре контейнера и пропускает предварительный подбор. Объём памяти Docker Engine можно узнать командой `docker info --format '{{.MemTotal}}'`; он отличается от объёма свободной памяти компьютера.
+
+Для $N=27$ и $N=28$ запускайте по одному случаю. Файл `docker/compose.16g.yaml` ограничивает контейнер 16 ГиБ и не добавляет swap:
+
+```powershell
+docker compose -f docker/compose.yaml -f docker/compose.16g.yaml run --rm -T notebook python scripts/run_case.py 27 PBC
+```
+
+Замените `27` и `PBC` на нужные $N$ и границу. Сравнение новых методов с CSR при $N\leq26$:
+
+```powershell
+docker compose -f docker/compose.yaml run --rm -T notebook python scripts/compare_methods.py
+```
 
 Сравните замеры полной плотной диагонализации и разрежённого метода:
 
@@ -56,7 +68,7 @@ docker compose -f docker/compose.yaml run --rm -T notebook python scripts/compar
 Выполните все ячейки ноутбука и сохраните результаты в нём:
 
 ```powershell
-docker compose -f docker/compose.yaml run --rm -T notebook jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=3600 notebooks/XXX_chain_ED.ipynb
+docker compose -f docker/compose.yaml run --rm -T notebook jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=14400 notebooks/XXX_chain_ED.ipynb
 ```
 
 Для измерения ресурсов одного случая:

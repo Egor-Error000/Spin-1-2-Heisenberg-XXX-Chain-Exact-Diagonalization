@@ -8,7 +8,17 @@ from __future__ import annotations
 import numpy as np
 from tqdm.auto import tqdm
 
-from xxx_chain import build_hamiltonian, lowest_eigenpair
+from xxx_chain import (
+    METHOD_CSR,
+    METHOD_SU2,
+    METHOD_SZ,
+    SingletHamiltonian,
+    SzHamiltonian,
+    build_hamiltonian,
+    ground_state,
+    lowest_eigenpair,
+    singlet_dimension,
+)
 
 
 def pauli_reference(n: int, periodic: bool) -> np.ndarray:
@@ -92,10 +102,129 @@ def check_working_sizes() -> None:
             assert abs(sector_minima[n // 2] - sector_minima[n // 2 + 1]) < 1e-9
 
 
+def _operator_matrix(matvec, dimension: int) -> np.ndarray:
+    columns = []
+    basis = np.zeros(dimension)
+    for index in range(dimension):
+        basis[index] = 1.0
+        columns.append(matvec(basis))
+        basis[index] = 0.0
+    return np.column_stack(columns)
+
+
+def singlet_energies_from_pauli(n: int, periodic: bool) -> np.ndarray:
+    """Eigenvalues of the Pauli Hamiltonian inside the Sz=0, S=0 subspace."""
+    reference = pauli_reference(n, periodic).real
+    n_up = n // 2
+    states = [state for state in range(1 << n) if state.bit_count() == n_up]
+    high_states = [state for state in range(1 << n) if state.bit_count() == n_up + 1]
+    high_index = {state: index for index, state in enumerate(high_states)}
+    raising = np.zeros((len(high_states), len(states)))
+    for column, state in enumerate(states):
+        for site in range(n):
+            if (state >> site) & 1 == 0:
+                raising[high_index[state | (1 << site)], column] += 1.0
+    spin_squared = raising.T @ raising
+    eigenvalues, eigenvectors = np.linalg.eigh(spin_squared)
+    selected = eigenvalues < 1e-8
+    if int(np.count_nonzero(selected)) != singlet_dimension(n):
+        raise AssertionError((n, int(np.count_nonzero(selected)), singlet_dimension(n)))
+    subspace = eigenvectors[:, selected]
+    projected = reference[np.ix_(states, states)]
+    return np.linalg.eigvalsh(subspace.T @ projected @ subspace)
+
+
+def check_matrix_free_operators() -> None:
+    """Match both new actions to the Pauli matrix and to CSR for N <= 10."""
+    rng = np.random.default_rng(2026)
+    for n in range(3, 11):
+        for periodic in (False, True):
+            matrix, states = build_hamiltonian(n, periodic)
+            reference = pauli_reference(n, periodic).real
+            projected = reference[np.ix_(states, states)]
+            vector = rng.standard_normal(matrix.shape[0])
+            sz_operator = SzHamiltonian(n, periodic)
+            sz_image = sz_operator.matvec(vector)
+            assert np.allclose(sz_image, matrix @ vector, atol=1e-12)
+            assert np.allclose(sz_image, projected @ vector, atol=1e-10)
+            if n % 2 == 0:
+                singlet = SingletHamiltonian(n, periodic)
+                assert singlet.dimension == singlet_dimension(n)
+                young = _operator_matrix(singlet.matvec, singlet.dimension)
+                assert np.allclose(young, young.T, atol=1e-10)
+                young_spectrum = np.linalg.eigvalsh(young)
+                pauli_spectrum = singlet_energies_from_pauli(n, periodic)
+                assert np.allclose(young_spectrum, pauli_spectrum, atol=1e-8)
+
+
+def check_singlet_permutations() -> None:
+    """Coxeter relations and the closing transposition in the Young basis."""
+    rng = np.random.default_rng(7)
+    for n in (4, 6, 8):
+        operator = SingletHamiltonian(n, False)
+        vector = rng.standard_normal(operator.dimension)
+        for generator in range(n - 1):
+            twice = operator.apply_generator(operator.apply_generator(vector, generator), generator)
+            assert np.allclose(twice, vector, atol=1e-10)
+        for generator in range(n - 3):
+            left = operator.apply_generator(operator.apply_generator(vector, generator), generator + 2)
+            right = operator.apply_generator(operator.apply_generator(vector, generator + 2), generator)
+            assert np.allclose(left, right, atol=1e-10)
+        for generator in range(n - 2):
+            def braid(order: tuple[int, int, int], current: np.ndarray) -> np.ndarray:
+                for item in order:
+                    current = operator.apply_generator(current, item)
+                return current
+
+            assert np.allclose(
+                braid((generator, generator + 1, generator), vector),
+                braid((generator + 1, generator, generator + 1), vector),
+                atol=1e-10,
+            )
+        closing = operator.apply_periodic_permutation(vector)
+        explicit = vector
+        sequence = list(range(n - 1)) + list(range(n - 3, -1, -1))
+        for generator in sequence:
+            explicit = operator.apply_generator(explicit, generator)
+        assert np.allclose(closing, explicit, atol=1e-10)
+        assert np.allclose(operator.apply_periodic_permutation(closing), vector, atol=1e-10)
+        for periodic in (False, True):
+            hamiltonian = SingletHamiltonian(n, periodic)
+            left = rng.standard_normal(hamiltonian.dimension)
+            right = rng.standard_normal(hamiltonian.dimension)
+            difference = left @ hamiltonian.matvec(right) - hamiltonian.matvec(left) @ right
+            scale = np.linalg.norm(left) * np.linalg.norm(right)
+            assert abs(difference) <= 1e-8 * max(scale, 1.0)
+
+
+def check_reference_energies() -> None:
+    """Exact small energies, norms, residuals, and a second starting vector."""
+    expectations = (
+        (3, False, -1.0, (METHOD_CSR, METHOD_SZ)),
+        (3, True, -0.75, (METHOD_CSR, METHOD_SZ)),
+        (4, True, -2.0, (METHOD_CSR, METHOD_SZ, METHOD_SU2)),
+    )
+    for n, periodic, expected, methods in expectations:
+        for method in methods:
+            row = ground_state(n, periodic, repeat=True, method=method)
+            assert abs(float(row["E0"]) - expected) < 1e-10
+            assert float(row["residual"]) < 1e-8
+            assert float(row["norm_error"]) < 1e-10
+            assert float(row["repeat_delta"]) < 1e-8
+            if method == METHOD_CSR:
+                assert "nnz" in row and "csr_gib" in row
+            else:
+                assert "nnz" not in row and "csr_gib" not in row
+
+
 def main() -> None:
     check_dense_reference()
     check_working_sizes()
-    print("Проверки пройдены: независимый эталон N=3..8 и все сектора N=3..16.")
+    check_matrix_free_operators()
+    check_singlet_permutations()
+    check_reference_energies()
+    print("Проверки пройдены: независимый эталон N=3..8, все сектора N=3..16 "
+          "и бесматричные операторы.")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,4 @@
+services:
+  notebook:
+    mem_limit: 16g
+    memswap_limit: 16g

@@ -13,7 +13,18 @@ import os
 import resource
 from time import perf_counter, process_time
 
-from xxx_chain import build_hamiltonian, lowest_eigenpair
+from xxx_chain import (
+    METHOD_CSR,
+    METHOD_SU2,
+    METHOD_SZ,
+    SingletHamiltonian,
+    SzHamiltonian,
+    build_hamiltonian,
+    lowest_eigenpair,
+    lowest_eigenpair_operator,
+    production_method,
+    warmup,
+)
 
 
 def gib(byte_count: int) -> float:
@@ -33,17 +44,34 @@ def main() -> None:
     parser.add_argument("n", type=int)
     parser.add_argument("boundary", choices=("OBC", "PBC"))
     args = parser.parse_args()
-
-    # Warm the Numba kernels before starting the measurement.
-    build_hamiltonian(4, False)
+    method = production_method(args.n)
     periodic = args.boundary == "PBC"
+    warmup(method)
     baseline_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
     start_wall = perf_counter()
     start_cpu = process_time()
-    matrix, states = build_hamiltonian(args.n, periodic, progress=False)
+    if method == METHOD_CSR:
+        matrix, states = build_hamiltonian(args.n, periodic, progress=False)
+        dimension = len(states)
+        basis_bytes = matrix.data.nbytes + matrix.indices.nbytes + matrix.indptr.nbytes
+    elif method == METHOD_SZ:
+        operator = SzHamiltonian(args.n, periodic)
+        dimension = operator.dimension
+        basis_bytes = operator.basis_bytes
+    elif method == METHOD_SU2:
+        operator = SingletHamiltonian(args.n, periodic)
+        dimension = operator.dimension
+        basis_bytes = operator.basis_bytes
+    else:
+        raise ValueError(method)
     build_wall = perf_counter() - start_wall
     build_peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
-    energy, vector, residual = lowest_eigenpair(matrix)
+    if method == METHOD_CSR:
+        energy, vector, residual = lowest_eigenpair(matrix)
+    else:
+        energy, vector, residual = lowest_eigenpair_operator(
+            operator.matvec, dimension, basis_bytes
+        )
     solve_wall = perf_counter() - start_wall - build_wall
     peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
     cpu_seconds = process_time() - start_cpu
@@ -52,8 +80,8 @@ def main() -> None:
     record = {
         "N": args.n,
         "boundary": args.boundary,
-        "dimension": len(states),
-        "nnz": matrix.nnz,
+        "method": method,
+        "dimension": dimension,
         "E0": energy,
         "residual": residual,
         "build_seconds": build_wall,
@@ -65,12 +93,13 @@ def main() -> None:
         "build_peak_rss_gib": gib(build_peak_rss),
         "peak_rss_gib": gib(peak_rss),
         "cgroup_peak_gib": gib(cgroup_peak) if cgroup_peak is not None else None,
-        "csr_gib": gib(matrix.data.nbytes + matrix.indices.nbytes + matrix.indptr.nbytes),
         "docker_memory_gib": gib(os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")),
     }
+    if method == METHOD_CSR:
+        record["nnz"] = matrix.nnz
+        record["csr_gib"] = gib(basis_bytes)
     print(json.dumps(record, ensure_ascii=False, sort_keys=True))
-    # Keep references alive through peak measurement.
-    assert len(vector) == len(states)
+    assert len(vector) == dimension
 
 
 if __name__ == "__main__":

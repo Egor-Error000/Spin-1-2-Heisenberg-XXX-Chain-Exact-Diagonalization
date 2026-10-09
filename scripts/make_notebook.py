@@ -24,7 +24,7 @@ cells = [
     markdown("intro", r"""
 # XXX-цепочка спинов 1/2: энергия основного состояния
 
-Для всех целых $N=3,\ldots,26$ рассчитываем открытые (ОГУ) и периодические
+Для всех целых $N=3,\ldots,28$ рассчитываем открытые (ОГУ) и периодические
 (ПГУ) границы. Полагаем $J=1$ и
 
 $$H=\sum_{(i,j)\in B}\mathbf S_i\cdot\mathbf S_j
@@ -54,9 +54,14 @@ $J_{\rm конспект}=-1$.
 
 Для каждой связи параллельных спинов диагональный вклад равен $+1/4$;
 антипараллельных — $-1/4$. Перестановка антипараллельных спинов даёт
-внедиагональный элемент $+1/2$. Numba формирует разреженную матрицу CSR
-блоками; `scipy.sparse.linalg.eigsh(k=1, which="SA")` ищет нижний уровень.
-Проверяем невязку $\|H\psi-E_0\psi\|_2$, норму $\psi$ и повторный запуск
+внедиагональный элемент $+1/2$. При $N\leq26$ Numba формирует разреженную
+матрицу CSR блоками. При $N=27$ то же действие $H\psi$ выполняется без
+сборки матрицы в секторе $S^z=-1/2$. При $N=28$ базис — ортонормированные
+таблицы Юнга формы $(14,14)$, то есть синглет $S=0$ размерности $2\,674\,440$;
+связь записывается как $\tfrac12 P_{ij}-\tfrac14 I$, а периодическая перестановка
+$(1\ N)$ применяется произведением соседних транспозиций.
+Во всех трёх методах `eigsh(k=1, which="SA")` ищет нижний уровень с прежним
+допуском. Проверяем невязку $\|H\psi-E_0\psi\|_2$, норму $\psi$ и повторный запуск
 с другим начальным вектором. Подробный вывод — в `docs/theory.md`.
 """),
     code("setup", r"""
@@ -64,6 +69,7 @@ import csv
 import sys
 from math import comb
 from pathlib import Path
+from time import perf_counter
 
 ROOT = Path.cwd().resolve()
 if ROOT.name == "notebooks":
@@ -78,37 +84,46 @@ import numpy as np
 from IPython.display import Markdown, display
 from tqdm.auto import tqdm
 from result_store import SOURCE_HASH, load_case, load_grid, write_case
-from xxx_chain import ground_state
+from xxx_chain import METHOD_CSR, METHOD_SU2, METHOD_SZ, ground_state
 
-SIZES = tuple(range(3, 27))
+SIZES = tuple(range(3, 29))
 E_INFINITY = 0.25 - np.log(2.0)
-print(f"48 случаев; аналитический предел: {E_INFINITY:.12f}")
+print(f"52 случая; аналитический предел: {E_INFINITY:.12f}")
 """),
     code("calculation", r"""
 cached, missing = load_grid(CASES, SIZES)
+small_missing = [(n, periodic) for n, periodic in missing if n < 27]
+large_missing = [(n, periodic) for n, periodic in missing if n >= 27]
 print(f"Проверенных контейнерных результатов: {len(cached)}; требуется вычислить: {len(missing)}")
-for n, periodic in tqdm(missing, desc="Недостающие цепочки"):
+for n, periodic in tqdm(small_missing, desc="Недостающие цепочки"):
     row = ground_state(n, periodic, progress=True, repeat=True)
     write_case(CASES, row)
+if large_missing:
+    print("Для N>=27 нужен отдельный контейнер с лимитом памяти 16 ГиБ:")
+    for n, periodic in large_missing:
+        boundary = "PBC" if periodic else "OBC"
+        print("docker compose -f docker/compose.yaml -f docker/compose.16g.yaml run --rm -T "
+              f"notebook python scripts/run_case.py {n} {boundary}")
+    raise RuntimeError("Крупные случаи ещё не измерены в изолированном контейнере.")
 
 results = [load_case(CASES, n, boundary)
            for n in SIZES for boundary in ("OBC", "PBC")]
-assert len(results) == 48 and all(row is not None for row in results)
+assert len(results) == 52 and all(row is not None for row in results)
 assert {(int(row["N"]), str(row["boundary"])) for row in results} == {
     (n, boundary) for n in SIZES for boundary in ("OBC", "PBC")}
-fields = ("N", "boundary", "n_up", "sz_total", "dimension", "nnz", "E0", "e0",
+fields = ("N", "boundary", "method", "n_up", "sz_total", "dimension", "nnz", "E0", "e0",
           "residual", "norm_error", "repeat_delta", "csr_gib")
 with (DATA / "results.csv").open("w", newline="", encoding="utf-8") as handle:
-    writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+    writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore", restval="")
     writer.writeheader()
     writer.writerows(results)
 print("Сохранено: data/results.csv")
 """),
     code("table", r"""
-lines = [r"| N | ГУ | $n_\\uparrow$ | Размер блока | $E_0$ | $E_0/N$ | Невязка | $\\lvert\\Delta E\\rvert$ повтора |",
-         "|---:|:---:|---:|---:|---:|---:|---:|---:|"]
+lines = [r"| N | ГУ | Метод | $n_\\uparrow$ | Размер блока | $E_0$ | $E_0/N$ | Невязка | $\\lvert\\Delta E\\rvert$ повтора |",
+         "|---:|:---:|:---|---:|---:|---:|---:|---:|---:|"]
 for row in results:
-    lines.append(f"| {row['N']} | {row['boundary']} | {row['n_up']} | "
+    lines.append(f"| {row['N']} | {row['boundary']} | {row.get('method', 'csr')} | {row['n_up']} | "
                  f"{row['dimension']:,} | {row['E0']:.10f} | {row['e0']:.10f} | "
                  f"{row['residual']:.2e} | {row['repeat_delta']:.2e} |")
 display(Markdown("\n".join(lines)))
@@ -204,6 +219,19 @@ assert abs(by_case[(4, "PBC")]["E0"] + 2) < 1e-10
 print("Максимальная невязка:", max(row["residual"] for row in results))
 print("Максимальная ошибка нормы:", max(row["norm_error"] for row in results))
 print("Максимальное расхождение повторов:", max(row["repeat_delta"] for row in results))
+compare_lines = ["| N | ГУ | Метод | $E_0$ | Невязка | Время, с |",
+                 "|---:|:---:|:---|---:|---:|---:|"]
+for n in (4, 6, 8, 10):
+    for periodic in (False, True):
+        boundary = "PBC" if periodic else "OBC"
+        for method in (METHOD_CSR, METHOD_SZ, METHOD_SU2):
+            started = perf_counter()
+            row = ground_state(n, periodic, method=method)
+            elapsed = perf_counter() - started
+            compare_lines.append(
+                f"| {n} | {boundary} | {method} | {row['E0']:.10f} | "
+                f"{row['residual']:.2e} | {elapsed:.3f} |")
+display(Markdown("\n".join(compare_lines)))
 partner_path = DATA / "partner_checks.json"
 if partner_path.exists():
     import json
@@ -230,19 +258,22 @@ else:
     code("resource-table", r"""
 usage = [row for row in results if "peak_rss_gib" in row]
 if usage:
-    fields = ("N", "boundary", "dimension", "nnz", "wall_seconds", "cpu_seconds",
-              "cpu_percent_one_core", "peak_rss_gib", "csr_gib", "docker_memory_gib")
+    fields = ("N", "boundary", "method", "dimension", "nnz", "wall_seconds", "cpu_seconds",
+              "cpu_percent_one_core", "peak_rss_gib", "cgroup_peak_gib", "csr_gib",
+              "docker_memory_gib")
     with (DATA / "resource_measurements.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore", restval="")
         writer.writeheader()
         writer.writerows(usage)
-    lines = ["| N | ГУ | Время, с | CPU, с | CPU, % ядра | Пик RAM, ГиБ | CSR, ГиБ |",
-             "|---:|:---:|---:|---:|---:|---:|---:|"]
+    lines = ["| N | ГУ | Метод | Время, с | CPU, с | CPU, % ядра | Пик RAM, ГиБ | CSR, ГиБ |",
+             "|---:|:---:|:---|---:|---:|---:|---:|---:|"]
     for row in usage:
         if row["N"] >= 16 and row["boundary"] == "PBC":
-            lines.append(f"| {row['N']} | PBC | {row['wall_seconds']:.2f} | "
+            csr = row.get("csr_gib")
+            csr_text = "—" if csr in (None, "") else f"{float(csr):.3f}"
+            lines.append(f"| {row['N']} | PBC | {row.get('method', 'csr')} | {row['wall_seconds']:.2f} | "
                          f"{row['cpu_seconds']:.2f} | {row['cpu_percent_one_core']:.1f} | "
-                         f"{row['peak_rss_gib']:.2f} | {row['csr_gib']:.3f} |")
+                         f"{row['peak_rss_gib']:.2f} | {csr_text} |")
     display(Markdown("\n".join(lines)))
 else:
     print("Изолированные замеры отсутствуют; запустите scripts/run_grid.ps1 на Windows.")
@@ -274,14 +305,20 @@ if usage:
         ax.legend()
     fig.savefig(DATA / "resource_usage.png", dpi=180)
     plt.show()
-    peak26 = max(row["peak_rss_gib"] for row in usage if row["N"] == 26)
-    def candidates(n):
-        k = n // 2
-        return comb(n, k) + 2*n*comb(n-2, k-1)
-    estimate28 = peak26 * candidates(28) / candidates(26)
-    print(f"Docker: {docker_gib:.2f} ГиБ; N=26: пик {peak26:.2f} ГиБ (измерено); "
-          f"N=28: около {estimate28:.1f} ГиБ (оценка, не измерение).")
-    print("Подтверждённый максимум текущего кода — N=26; N=27 не тестировался и пока не поддерживается.")
+    def measured_peak(size):
+        rows = [row["peak_rss_gib"] for row in usage if row["N"] == size]
+        return max(rows) if rows else None
+    parts = [f"Docker: {docker_gib:.2f} ГиБ"]
+    for size in (26, 27, 28):
+        peak = measured_peak(size)
+        if peak is not None:
+            parts.append(f"N={size}: пик {peak:.2f} ГиБ (измерено)")
+    print("; ".join(parts) + ".")
+    singlet30 = comb(30, 15) // 16
+    lanczos30 = comb(30, 15) * 20 * 8 / 1024**3
+    print(f"N=30 остаётся возможным продолжением: сектор S^z=0 имеет размер {comb(30, 15):,}, "
+          f"и один базис Ланцоша при ncv=20 занимает около {lanczos30:.1f} ГиБ. "
+          f"Синглетный блок имеет размер {singlet30:,}. Вместимость и время не утверждаются.")
 """),
 ]
 
@@ -378,12 +415,13 @@ for boundary in ("OBC", "PBC"):
         axes[1].semilogy([row["N"] for row in branch],
                          [row[f"{method}_peak_gib"] for row in branch],
                          marker="o", linestyle=style, color=colors[boundary], label=label)
-n = np.arange(3, 27)
+n = np.arange(3, 29)
+csr_rows = [row for row in results if row["boundary"] == "PBC" and row.get("csr_gib") not in (None, "")]
 axes[2].semilogy(n, 8.0 * 4.0**n / 1024**3, label="Полная плотная H (формула)")
 axes[2].semilogy(n, [8.0 * comb(int(k), int(k)//2)**2 / 1024**3 for k in n],
                  label="Плотный центральный блок (формула)")
-axes[2].semilogy([row["N"] for row in results if row["boundary"] == "PBC"],
-                 [row["csr_gib"] for row in results if row["boundary"] == "PBC"],
+axes[2].semilogy([row["N"] for row in csr_rows],
+                 [row["csr_gib"] for row in csr_rows],
                  marker="o", label="CSR центрального блока, ПГУ (измерено)")
 axes[0].set_ylabel("Сборка + один решатель, с")
 axes[1].set_ylabel("Пиковый RSS процесса, ГиБ")
